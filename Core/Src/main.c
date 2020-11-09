@@ -92,6 +92,7 @@ static unsigned int lutStep = 0;
 static unsigned int lutPtr = 0;
 
 // Hilbert 90 degrees
+// Group delay = (N-1)/2
 static float32_t filter_taps[FILTER_TAP_NUM] = {
 		 0.001070961715267396,
 		 0.000000000000000000,
@@ -234,12 +235,13 @@ static float32_t fft_input[256];
 static int fft_input_ptr = 0;
 //static uint32_t last_time = 0;
 
-// Delay line that is equivalent in length to the filter
-static float32_t delayBuffer[FILTER_TAP_NUM];
+// Delay line that is equivalent in length to the group delay of the filter
+static float32_t delayBuffer[(FILTER_TAP_NUM - 1) / 2];
+static int delaySize = (FILTER_TAP_NUM - 1) / 2;
 static int delayPtr = 0;
 
 static int fix(int ptr) {
-	return ptr % FILTER_TAP_NUM;
+	return ptr % delaySize;
 }
 
 static void writeDelay(const float32_t* d, int size) {
@@ -270,7 +272,7 @@ static void setSynthFreq(float freqHz) {
 // This writes half of the outbound data into the DMA buffer.  This is
 // called by the DMA interrupt at the half-way point through the
 // entire DMA buffer.
-static void moveOut(int base) {
+static void moveOut2(int base) {
 
 	int32_t ci;
 	uint16_t hi = 0;
@@ -284,7 +286,8 @@ static void moveOut(int base) {
 	// Apply the filter to the block of data that we have read most recently
 	for (int i = 0; i < blockSize; i++) {
 		// Move the sampled data into the arrays that will be processed by
-		// the DSP functions:
+		// the DSP functions.  This is a case from a signed integer to
+		// a float32.
 		filterIn[i] = queue[queue_read_ptr++];
 		// Look for the wrap
 		if (queue_read_ptr == queueSize) {
@@ -318,6 +321,54 @@ static void moveOut(int base) {
 		//ci = filterOut[i];
 		//ci = delayOut[i];
 		ci = amp * lut[lutPtr];
+		hi = ci >> 8;
+		lo = (ci & 0x000000ff) << 8;
+		out_data[out_ptr++] = hi;
+		out_data[out_ptr++] = lo;
+	}
+}
+
+// This writes half of the outbound data into the DMA buffer.  This is
+// called by the DMA interrupt at the half-way point through the
+// entire DMA buffer.
+static void moveOut(int base) {
+
+	int32_t ci;
+	uint16_t hi = 0;
+	uint16_t lo = 0;
+
+	int out_ptr = base;
+	float32_t filterIn[FILTER_BLOCK_SIZE];
+	float32_t filterOut[FILTER_BLOCK_SIZE];
+	float32_t delayOut[FILTER_BLOCK_SIZE];
+
+	// Take the synthesized cosine and load it into the filter input area
+	for (int i = 0; i < blockSize; i++) {
+		// Generate synth data by stepping through the cosine table
+		// This handles the wrapping of the LUT pointer:
+		lutPtr = (lutPtr + lutStep) & 0xff;
+		filterIn[i] = amp * lut[lutPtr];
+	}
+
+	// Apply the filter
+	// MEASUREMENT: This takes about 4,000 cycles.
+	arm_fir_f32(&filter_lp_0, filterIn, filterOut, blockSize);
+
+	// Move data out of the circular buffer (lagged)
+	readDelay(delayOut, blockSize);
+	// Move data into the circular buffer to keep things flowing
+	writeDelay(filterIn, blockSize);
+
+	// Generate the output signals
+	for (int i = 0; i < blockSize; i++) {
+		// LEFT CHANNEL - Output of FIR filter
+		ci = filterOut[i];
+		hi = ci >> 8;
+		lo = (ci & 0x000000ff) << 8;
+		out_data[out_ptr++] = hi;
+		out_data[out_ptr++] = lo;
+		// RIGHT CHANNEL - Output of delay line to maintain the phase relationship
+		ci = delayOut[i];
 		hi = ci >> 8;
 		lo = (ci & 0x000000ff) << 8;
 		out_data[out_ptr++] = hi;
@@ -454,10 +505,10 @@ int main(void)
 	  //HAL_I2S_Transmit(&hi2s2, data, 2, 100);
 
 	  // Alternate between frequencies
-	  HAL_Delay(150);
-	  setSynthFreq(400);
-	  HAL_Delay(150);
-	  setSynthFreq(4000);
+	  //HAL_Delay(150);
+	  //setSynthFreq(1500);
+	  //HAL_Delay(150);
+	  //setSynthFreq(4000);
 	  count++;
 	  /*
 		float32_t fft_max = 0;
