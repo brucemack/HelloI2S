@@ -16,7 +16,7 @@
 
 #define ARM_MATH_CM4
 #include "arm_math.h"
-
+// This contains C++ initialization stuff
 #include "Bridge.h"
 
 /* USER CODE END Includes */
@@ -36,6 +36,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 I2S_HandleTypeDef hi2s2;
 I2S_HandleTypeDef hi2s3;
 DMA_HandleTypeDef hdma_spi2_tx;
@@ -54,6 +56,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_I2S3_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -236,10 +239,13 @@ static arm_rfft_fast_instance_f32 rfft;
 static float32_t fft_input[256];
 static int fft_input_ptr = 0;
 //static uint32_t last_time = 0;
+static float32_t balance = 0.94;
+static float32_t gain = 0.75;
 
 // Delay line that is equivalent in length to the group delay of the filter
-static float32_t delayBuffer[(FILTER_TAP_NUM - 1) / 2];
-static int delaySize = (FILTER_TAP_NUM - 1) / 2;
+#define DELAY_TAP_NUM 63
+static float32_t delayBuffer[(DELAY_TAP_NUM - 1) / 2];
+static int delaySize = (DELAY_TAP_NUM - 1) / 2;
 static int delayPtr = 0;
 
 static int fix(int ptr) {
@@ -349,7 +355,7 @@ static void moveOut(int base) {
 		// Generate synth data by stepping through the cosine table
 		// This handles the wrapping of the LUT pointer:
 		lutPtr = (lutPtr + lutStep) & 0xff;
-		filterIn[i] = amp * lut[lutPtr];
+		filterIn[i] = amp * lut[lutPtr] * gain;
 	}
 
 	// Apply the filter
@@ -364,13 +370,13 @@ static void moveOut(int base) {
 	// Generate the output signals
 	for (int i = 0; i < blockSize; i++) {
 		// LEFT CHANNEL - Output of FIR filter
-		ci = filterOut[i];
+		ci = filterOut[i] * balance;
 		hi = ci >> 8;
 		lo = (ci & 0x000000ff) << 8;
 		out_data[out_ptr++] = hi;
 		out_data[out_ptr++] = lo;
 		// RIGHT CHANNEL - Output of delay line to maintain the phase relationship
-		ci = delayOut[i];
+		ci = (delayOut[i]);
 		hi = ci >> 8;
 		lo = (ci & 0x000000ff) << 8;
 		out_data[out_ptr++] = hi;
@@ -470,6 +476,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2S2_Init();
   MX_I2S3_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
   Bridge_setup();
@@ -496,7 +503,7 @@ int main(void)
 		lut[i] = cos(a);
 	}
 
-	setSynthFreq(5000);
+	setSynthFreq(10500);
 
   /* USER CODE END 2 */
 
@@ -593,6 +600,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
