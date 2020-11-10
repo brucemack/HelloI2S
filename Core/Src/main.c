@@ -336,9 +336,6 @@ static void moveOut2(int base) {
 	}
 }
 
-// This writes half of the outbound data into the DMA buffer.  This is
-// called by the DMA interrupt at the half-way point through the
-// entire DMA buffer.
 static void moveOut(int base) {
 
 	int32_t ci;
@@ -352,10 +349,20 @@ static void moveOut(int base) {
 
 	// Take the synthesized cosine and load it into the filter input area
 	for (int i = 0; i < blockSize; i++) {
+		/*
 		// Generate synth data by stepping through the cosine table
 		// This handles the wrapping of the LUT pointer:
 		lutPtr = (lutPtr + lutStep) & 0xff;
 		filterIn[i] = amp * lut[lutPtr] * gain;
+		*/
+		// Move the sampled data into the arrays that will be processed by
+		// the DSP functions.  This is a case from a signed integer to
+		// a float32.
+		filterIn[i] = queue[queue_read_ptr++];
+		// Look for the wrap
+		if (queue_read_ptr == queueSize) {
+			queue_read_ptr = 0;
+		}
 	}
 
 	// Apply the filter
@@ -392,6 +399,7 @@ static void moveIn(int base) {
 	int in_ptr = base;
 
 	for (int i = 0; i < blockSize; i++) {
+		// Read the left channel into the receive queue.
 		// Load the high end of the sample into the high end of the 32-bit number
 		int32_t sample = (in_data[in_ptr++] << 16);
 		// Preserve sign while adjusting magnitude down from 32 bits to 24 bits
@@ -409,7 +417,7 @@ static void moveIn(int base) {
 		if (fft_input_ptr == fft_size) {
 			fft_input_ptr = 0;
 		}
-		// Ignore the right channel input (for now)
+		// Ignore the right channel input
 		in_ptr++;
 		in_ptr++;
 	}
@@ -686,7 +694,7 @@ static void MX_I2S3_Init(void)
 
   /* USER CODE END I2S3_Init 1 */
   hi2s3.Instance = SPI3;
-  hi2s3.Init.Mode = I2S_MODE_MASTER_RX;
+  hi2s3.Init.Mode = I2S_MODE_SLAVE_RX;
   hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
   hi2s3.Init.DataFormat = I2S_DATAFORMAT_24B;
   hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
