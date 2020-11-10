@@ -17,6 +17,8 @@
 #define ARM_MATH_CM4
 #include "arm_math.h"
 
+#include "Bridge.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -470,6 +472,7 @@ int main(void)
   MX_I2S3_Init();
   /* USER CODE BEGIN 2 */
 
+  Bridge_setup();
   printf("Hello World\n");
 
   // Enable cycle counting
@@ -493,7 +496,7 @@ int main(void)
 		lut[i] = cos(a);
 	}
 
-	setSynthFreq(1500);
+	setSynthFreq(5000);
 
   /* USER CODE END 2 */
 
@@ -501,6 +504,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 	while (1)
 	{
+		Bridge_loop();
 	  //HAL_Delay(100);
 	  //HAL_I2S_Transmit(&hi2s2, data, 2, 100);
 
